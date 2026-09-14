@@ -1,44 +1,61 @@
-# 🚒 Smart Firefighter Safety Vest
-
-## 📌 Project Overview
-
-The **Smart Firefighter Safety Vest** is a wearable safety system designed to support firefighters in hazardous and low-visibility environments.
-
-The system uses a **TI IWR6843AOP mmWave radar** for human and target detection, along with temperature, gas, and motion sensors for safety monitoring. A **VEGA processor** is used for sensor data handling and control, while a **Raspberry Pi 3** is used for radar data processing and communication.
-
-The system provides real-time information through a TFT display and gives voice warnings using a DFPlayer Mini and speaker. An HC-05 Bluetooth module is used for wireless communication.
-
-## 🚀 Main Features
-
-- 🔴 Human and target detection using IWR6843AOP mmWave radar
-- 🌡️ Temperature monitoring
-- 🧪 Gas/environmental monitoring
-- 🧍 Fall and motion detection using MPU6050
-- 📺 Real-time TFT display
-- 🔊 Voice alerts using DFPlayer Mini
-- 📡 HC-05 Bluetooth communication
-- 🥧 Raspberry Pi 3 radar processing
-- ⚙️ VEGA-based sensor processing and control
-- 📊 Monitoring dashboard
+---
 
 ## 🎥 Project Demonstration
 
-<p align="center">
-  <video width="800" controls>
-    <source src="https://github.com/user-attachments/assets/9821942a-39f1-446c-9605-6bc7604f31d0" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
-</p>
+Experience the **Smart Firefighter Safety Vest** in action through our project demonstration.
 
-## 🎯 Objective
+▶️ **[Watch the Project Demo Video](https://drive.google.com/file/d/1NFGr66ZH-lMb2ZmJBh_2Wqs7rxdaKz6J/view?usp=drive_link)**
 
-The main objective of this project is to provide firefighters with useful real-time safety information and alerts while working in hazardous environments, especially where visibility is reduced by smoke or darkness.
+📸 **[View Project Photos & Project Showcase](https://drive.google.com/drive/folders/1M4DlgV-fvGVxmNzrvYNVtRD--PSukIPN?usp=sharing)**
 
-## 👥 Team
+---
 
-| Name | Role |
-|---|---|
-| **KISHORE R B** | Team Captain |
-| **LOGESH P** | Team Member |
-| **YUVARAJ P** | Team Member |
-| **SUJITH KRISHNA R** | Team Member |
+## 👥 Project Team
+
+| Name | Responsibility |
+|------|----------------|
+| **KISHORE R B** | (Team Captain) 
+| **LOGESH P** |
+| **YUVARAJ P** |
+| **SUJITH KRISHNA R** | 
+
+---
+
+## 🔥 About the Project
+
+### Smart Firefighter Safety Vest
+
+The **Smart Firefighter Safety Vest** is an intelligent wearable safety system developed to enhance the **situational awareness, safety, and response capability of firefighters** operating in hazardous and low-visibility environments.
+
+Firefighters often work in conditions involving **extreme temperatures, smoke, poor visibility, hazardous gases, and unexpected physical incidents**. Our system is designed to continuously monitor both the **firefighter and the surrounding environment**, providing important safety information in real time.
+
+The vest integrates a **TI IWR6843AOP mmWave radar** for human and target detection along with multiple sensors for **temperature, gas/environmental conditions, and motion/fall detection**.
+
+The **VEGA processor** handles sensor data and system control, while a **Raspberry Pi 3** performs radar data processing and communication. The collected information is presented to the firefighter through a **TFT display**, allowing critical parameters to be viewed quickly.
+
+For emergency situations, the system provides **voice-based alerts using a DFPlayer Mini and speaker**, helping the firefighter receive warnings even when visual information may be difficult to observe. An **HC-05 Bluetooth module** enables wireless communication between the vest and the monitoring system.
+
+### ⚙️ Integrated Safety System
+
+The project brings together:
+
+- 🔴 **mmWave Radar** – Human and target detection
+- 🌡️ **Temperature Monitoring** – Monitoring surrounding temperature conditions
+- 🧪 **Gas/Environmental Monitoring** – Detection and monitoring of hazardous conditions
+- 🧍 **MPU6050** – Motion and fall detection
+- ⚙️ **VEGA Processor** – Sensor processing and system control
+- 🥧 **Raspberry Pi 3** – Radar data processing and communication
+- 📺 **TFT Display** – Real-time safety information
+- 🔊 **DFPlayer Mini** – Voice-based emergency warnings
+- 📡 **HC-05 Bluetooth** – Wireless communication
+- 📊 **Monitoring Dashboard** – Remote observation of system data
+
+### 🎯 Project Objective
+
+The primary objective of the **Smart Firefighter Safety Vest** is to provide firefighters with **real-time safety information and immediate alerts** during emergency operations.
+
+By combining **sensing, radar-based detection, embedded processing, wireless communication, visual information, and voice alerts** into a wearable platform, the system aims to support firefighters in making **faster and safer decisions in challenging environments**.
+
+> **“Sense the Environment. Detect the Danger. Protect the Firefighter.”**
+
+---
