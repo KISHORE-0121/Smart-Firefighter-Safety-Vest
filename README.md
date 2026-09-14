@@ -1,57 +1,27 @@
-# Smart Firefighter Vest
+Smart Firefighter Safety Vest
 
-## Project Overview
-A smart safety vest designed to assist firefighters through real-time monitoring, human detection, environmental sensing, and audio/visual alerts.
+The Smart Firefighter Safety Vest is a wearable safety system designed to support firefighters in hazardous and low-visibility environments.
 
-> **Note:** Replace the placeholder sections below with your team's actual implementation details.
+The system uses a TI IWR6843AOP mmWave radar for human and target detection, along with temperature, gas, and motion sensors for safety monitoring. A VEGA processor is used for sensor data handling and control, while a Raspberry Pi 3 is used for radar data processing and communication.
 
-## Key Features
-- Human detection using TI mmWave radar
-- Environmental/temperature monitoring
-- Fall detection/status monitoring
-- TFT display for live readings
-- Audio alerts using DFPlayer Mini
-- Raspberry Pi / VEGA based processing and communication
+The system provides real-time information through a TFT display and gives voice warnings using a DFPlayer Mini and speaker. An HC-05 Bluetooth module is used for wireless communication.
+
+Main Features:
+- Human and target detection using IWR6843AOP mmWave radar
+- Temperature monitoring
+- Gas/environmental monitoring
+- Fall and motion detection using MPU6050
+- Real-time TFT display
+- Voice alerts using DFPlayer Mini
+- HC-05 Bluetooth communication
+- Raspberry Pi 3 radar processing
+- VEGA-based sensor processing and control
 - Monitoring dashboard
 
-## System Architecture
-```text
-Sensors + TI mmWave Radar
-          |
-          v
-   Processing / Control
-   Raspberry Pi + VEGA
-          |
-     +----+----+
-     |         |
-     v         v
- TFT Display  DFPlayer Mini
-     |
-     v
- Monitoring Dashboard
-```
+The main objective of this project is to provide firefighters with useful real-time safety information and alerts while working in hazardous environments, especially where visibility is reduced by smoke or darkness.
 
-## Hardware
-See `hardware/components-list.md`.
-
-## Software
-- Raspberry Pi code: `software/raspberry-pi/`
-- VEGA code: `software/vega/`
-- Dashboard code: `software/dashboard/`
-- Radar documentation/configuration: `radar/`
-
-## Repository Structure
-See the folders in this repository.
-
-## Setup
-Add your actual installation, wiring, dependencies, serial-port settings, and run commands here.
-
-## Testing
-Add measured test results here.
-
-## Team
-- Member 1:
-- Member 2:
-- Member 3:
-
-
+Team:
+KISHORE R B – Team Captain
+LOGESH P
+YUVARAJ P
+SUJITH KRISHNA R
