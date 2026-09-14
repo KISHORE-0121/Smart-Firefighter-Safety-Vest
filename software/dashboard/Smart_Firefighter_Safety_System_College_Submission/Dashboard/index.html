@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Firefighter Safety & Human Detection System | Command Dashboard</title>
+  <meta name="description" content="Real-time firefighter safety telemetry, TI IWR6843AOP mmWave radar human detection, MLX90614 temperature, MQ-135 air quality, and MPU6050 fall monitoring dashboard.">
+  
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Chart.js for Live Sensor Trends -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-dark">
+
+  <!-- EMERGENCY ALERT MODAL OVERLAY -->
+  <div id="emergencyOverlay" class="emergency-overlay hidden">
+    <div class="emergency-modal">
+      <div class="emergency-pulse-ring"></div>
+      <div class="emergency-header">
+        <i class="fa-solid fa-triangle-exclamation emergency-icon"></i>
+        <span class="emergency-badge">HIGH PRIORITY EMERGENCY</span>
+      </div>
+      <h1 id="emergencyTitle" class="emergency-title">FALL DETECTED</h1>
+      <p id="emergencySubtitle" class="emergency-subtitle">CHECK FIREFIGHTER IMMEDIATELY — POSSIBLE MAN DOWN</p>
+      
+      <div class="emergency-details-grid">
+        <div class="emergency-item">
+          <span class="lbl">EVENT TIME</span>
+          <span id="emergencyTimestamp" class="val">--:--:--</span>
+        </div>
+        <div class="emergency-item">
+          <span class="lbl">INCIDENT TYPE</span>
+          <span id="emergencyType" class="val text-danger">FIREFIGHTER FALL</span>
+        </div>
+        <div class="emergency-item">
+          <span class="lbl">CURRENT TEMP</span>
+          <span id="emergencyTemp" class="val">-- °C</span>
+        </div>
+        <div class="emergency-item">
+          <span class="lbl">AIR QUALITY</span>
+          <span id="emergencyAir" class="val">--</span>
+        </div>
+      </div>
+
+      <div class="emergency-actions">
+        <button id="btnAcknowledgeEmergency" class="btn-emergency-ack">
+          <i class="fa-solid fa-check-double"></i> ACKNOWLEDGE & SILENCE
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP HEADER & CONTROLS -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="badge-fire-shield">
+        <i class="fa-solid fa-fire-flame-curved"></i>
+      </div>
+      <div class="brand-text">
+        <h1 class="system-title">SMART FIREFIGHTER SAFETY SYSTEM</h1>
+        <p class="system-subtitle">VEGA ARIES V3 — REAL-TIME SAFETY MONITORING</p>
+      </div>
+    </div>
+
+    <!-- Live System Clock & Mode Pill -->
+    <div class="header-center">
+      <div id="modePill" class="mode-badge real-mode">
+        <span class="mode-dot"></span>
+        <span id="modeText">HARDWARE LIVE MODE</span>
+      </div>
+      <div class="time-display">
+        <i class="fa-regular fa-clock"></i>
+        <span id="liveClock">--:--:-- UTC</span>
+      </div>
+    </div>
+
+    <!-- Header Config & Actions -->
+    <div class="header-actions">
+      <!-- Mode Toggle Switch -->
+      <div class="toggle-group" title="Switch between live hardware API polling and interactive simulator">
+        <span class="toggle-label">DEMO</span>
+        <label class="switch">
+          <input type="checkbox" id="toggleDemoMode">
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Audio Mute/Unmute -->
+      <button id="btnToggleAudio" class="icon-btn active" title="Toggle Emergency Siren Synth">
+        <i class="fa-solid fa-volume-high"></i>
+      </button>
+
+      <!-- Bluetooth Debug Button -->
+      <button id="btnBluetoothDebug" class="icon-btn" title="Bluetooth (HC-05) Debug Console">
+        <i class="fa-brands fa-bluetooth-b"></i>
+      </button>
+
+      <!-- Settings Dropdown Trigger -->
+      <button id="btnOpenConfig" class="icon-btn" title="API Connection Settings">
+        <i class="fa-solid fa-gear"></i>
+      </button>
+
+      <!-- Fullscreen Toggle -->
+      <button id="btnToggleFullscreen" class="icon-btn" title="Toggle Fullscreen">
+        <i class="fa-solid fa-expand"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- CONFIGURATION MODAL / DRAWER -->
+  <div id="configModal" class="config-modal hidden">
+    <div class="config-card">
+      <div class="config-header">
+        <h3><i class="fa-solid fa-sliders"></i> Hardware & API Gateway Settings</h3>
+        <button id="btnCloseConfig" class="btn-close">&times;</button>
+      </div>
+      <div class="config-body">
+        <div class="input-group">
+          <label for="inputApiUrl">Raspberry Pi API URL (GET /api/data)</label>
+          <div class="input-with-button">
+            <input type="text" id="inputApiUrl" placeholder="http://192.168.1.50:5000/api/data" value="http://127.0.0.1:5000/api/data">
+            <button id="btnApplyApiUrl" class="btn-primary">Apply</button>
+          </div>
+          <small class="helper-text">Replace with your Raspberry Pi's IP address (e.g. <code>http://192.168.x.x:5000/api/data</code>). Keep <code>127.0.0.1</code> for mock server testing.</small>
+        </div>
+
+        <div class="config-row">
+          <div class="input-group half">
+            <label for="selectPollRate">Polling Interval</label>
+            <select id="selectPollRate">
+              <option value="250">250 ms (Ultra Fast)</option>
+              <option value="500" selected>500 ms (Recommended)</option>
+              <option value="1000">1000 ms (1 sec)</option>
+              <option value="2000">2000 ms (2 sec)</option>
+            </select>
+          </div>
+          <div class="input-group half">
+            <label for="inputTimeoutLimit">Data Timeout (seconds)</label>
+            <input type="number" id="inputTimeoutLimit" min="1" max="30" value="4">
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div class="input-group half">
+            <label for="inputTempWarn">Temp Warning Threshold (°C)</label>
+            <input type="number" id="inputTempWarn" value="50.0">
+          </div>
+          <div class="input-group half">
+            <label for="inputTempCrit">Temp Critical Threshold (°C)</label>
+            <input type="number" id="inputTempCrit" value="70.0">
+          </div>
+        </div>
+
+        <div class="config-row">
+          <div class="input-group half">
+            <label for="inputAirWarn">Air Quality Warning Threshold</label>
+            <input type="number" id="inputAirWarn" value="1000.0">
+          </div>
+          <div class="input-group half">
+            <label for="inputFallConfirmTime">Fall Confirmation Time (s)</label>
+            <input type="number" id="inputFallConfirmTime" value="30">
+          </div>
+        </div>
+      </div>
+      <div class="config-footer">
+        <button id="btnResetDefaults" class="btn-secondary">Reset Defaults</button>
+        <button id="btnSaveConfig" class="btn-primary">Save & Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BLUETOOTH HC-05 DEBUG MODAL -->
+  <div id="bluetoothModal" class="config-modal hidden">
+    <div class="config-card">
+      <div class="config-header">
+        <h3><i class="fa-brands fa-bluetooth-b text-accent"></i> HC-05 Bluetooth Debug Console</h3>
+        <button id="btnCloseBluetoothModal" class="btn-close">&times;</button>
+      </div>
+      <div class="config-body">
+        <!-- Bluetooth Status Strip -->
+        <div class="bluetooth-status-banner">
+          <div class="bt-status-dot dot-disconnected" id="btModalStatusDot"></div>
+          <div class="bt-status-text">
+            <span class="bt-lbl">WIRELESS LINK:</span>
+            <strong id="btModalStatusText">DISCONNECTED / STANDBY</strong>
+          </div>
+          <span class="badge-accent" id="btDeviceName">DEVICE: NONE</span>
+        </div>
+
+        <!-- Connection Buttons -->
+        <div class="bt-action-row">
+          <button id="btnConnectWebBluetooth" class="btn-primary" title="Pair HC-05 via Web Bluetooth API">
+            <i class="fa-brands fa-bluetooth-b"></i> Web Bluetooth
+          </button>
+          <button id="btnConnectWebSerial" class="btn-secondary" title="Pair HC-05 via Bluetooth Serial COM Port">
+            <i class="fa-solid fa-microchip"></i> Bluetooth COM Port
+          </button>
+          <button id="btnSimulateBtStream" class="btn-secondary" title="Simulate HC-05 serial packet stream">
+            <i class="fa-solid fa-play"></i> Debug Stream (Sim)
+          </button>
+          <button id="btnDisconnectBluetooth" class="btn-secondary hidden" style="border-color: #ff1744; color: #ff1744;">
+            <i class="fa-solid fa-power-off"></i> Disconnect
+          </button>
+        </div>
+
+        <!-- Terminal Window for incoming data -->
+        <div class="input-group">
+          <label>Bluetooth Live Raw Terminal (Incoming VEGA Telemetry)</label>
+          <div class="terminal-window" id="btTerminalLog">
+            <p class="term-line text-muted">[SYSTEM] Bluetooth Debug Console Ready. Click "Web Bluetooth", "Bluetooth COM Port", or "Debug Stream" to test.</p>
+          </div>
+        </div>
+
+        <!-- Inject packet input -->
+        <div class="input-group">
+          <label>Inject Debug Packet to VEGA / Dashboard</label>
+          <div class="input-with-button">
+            <input type="text" id="inputBtDebugCommand" placeholder="V,45.2,780,0,9.81,1.5,0,1,0" value="V,45.2,780,0,9.81,1.5,0,1,0">
+            <button id="btnSendBtCommand" class="btn-primary">Send</button>
+          </div>
+          <small class="helper-text">Format: <code>V,temp,airQuality,fallConfirmed,accelMag,gyroMag,highTemp,dfPlayerReady,lastTrack</code> or <code>H,count,dist,angle,vel</code></small>
+        </div>
+      </div>
+      <div class="config-footer">
+        <button id="btnClearBtTerminal" class="btn-secondary">Clear Terminal</button>
+        <button id="btnCloseBtFooter" class="btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIMULATOR CONTROL BAR (Visible in DEMO Mode) -->
+  <div id="demoControlBar" class="demo-bar hidden">
+    <div class="demo-bar-inner">
+      <div class="demo-tag">
+        <i class="fa-solid fa-flask-vial"></i> <strong>DEMO MODE — SIMULATED DATA</strong>
+      </div>
+      <div class="demo-scenarios">
+        <span>Test Scenarios:</span>
+        <button class="btn-demo-scenario" data-scenario="no_human"><i class="fa-solid fa-user-slash"></i> No Human</button>
+        <button class="btn-demo-scenario" data-scenario="one_human"><i class="fa-solid fa-user"></i> 1 Human (2.4m)</button>
+        <button class="btn-demo-scenario" data-scenario="multi_humans"><i class="fa-solid fa-users"></i> 3 Humans</button>
+        <button class="btn-demo-scenario" data-scenario="high_temp"><i class="fa-solid fa-temperature-arrow-up"></i> High Temp (68°C)</button>
+        <button class="btn-demo-scenario" data-scenario="poor_air"><i class="fa-solid fa-wind"></i> Poor Air (1450)</button>
+        <button class="btn-demo-scenario btn-danger-tag" data-scenario="fall_detected"><i class="fa-solid fa-person-falling"></i> Fall Emergency!</button>
+        <button class="btn-demo-scenario" data-scenario="disconnect"><i class="fa-solid fa-plug-circle-xmark"></i> Lost Connection</button>
+        <button class="btn-demo-scenario btn-success-tag" data-scenario="safe"><i class="fa-solid fa-shield-heart"></i> Reset to Safe</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONNECTION STATUS STRIP (9 INDIVIDUAL HARDWARE MONITORS) -->
+  <section class="connectivity-strip" id="connectionStrip">
+    <div class="conn-item" id="connRadar">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">IWR6843AOP RADAR</span>
+      <span class="conn-state">INITIALIZING</span>
+    </div>
+    <div class="conn-item" id="connPi">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">RASPBERRY PI</span>
+      <span class="conn-state">CONNECTING</span>
+    </div>
+    <div class="conn-item" id="connVega">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">VEGA ARIES</span>
+      <span class="conn-state">CHECKING</span>
+    </div>
+    <div class="conn-item" id="connMlx">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">MLX90614</span>
+      <span class="conn-state">WAITING</span>
+    </div>
+    <div class="conn-item" id="connMq">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">MQ-135</span>
+      <span class="conn-state">WAITING</span>
+    </div>
+    <div class="conn-item" id="connMpu">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">MPU6050</span>
+      <span class="conn-state">WAITING</span>
+    </div>
+    <div class="conn-item" id="connDfplayer">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">DFPLAYER MINI</span>
+      <span class="conn-state" id="dfPlayerConnState">INITIALIZING</span>
+    </div>
+    <div class="conn-item" id="connBt">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">HC-05</span>
+      <span class="conn-state">STANDBY</span>
+    </div>
+    <div class="conn-item" id="connDashboard">
+      <span class="conn-indicator dot-waiting"></span>
+      <span class="conn-label">DASHBOARD API</span>
+      <span class="conn-state" id="apiLatency">POLLING...</span>
+    </div>
+  </section>
+
+  <!-- ALERT STATUS BANNER (Dynamic) -->
+  <div id="statusBanner" class="status-banner banner-normal">
+    <div class="banner-content">
+      <i id="bannerIcon" class="fa-solid fa-circle-check"></i>
+      <span id="bannerText">SYSTEM OPERATIONAL — ALL FIREFIGHTER SAFETY SENSORS REPORTING NORMAL</span>
+    </div>
+    <div class="banner-right">
+      <span id="lastUpdateText" class="last-update">LAST UPDATE: Just now</span>
+    </div>
+  </div>
+
+  <!-- MAIN DASHBOARD CONTENT -->
+  <main class="dashboard-grid">
+
+    <!-- TOP ROW: 5 PRIMARY METRIC CARDS -->
+    <div class="top-metric-cards">
+
+      <!-- CARD 1: HUMANS DETECTED -->
+      <div class="metric-card card-human-count" id="cardHumanCount">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-user-group card-icon"></i>
+            <span class="card-title">HUMANS DETECTED</span>
+          </div>
+          <span class="status-tag tag-none" id="humanDetectedPill">NO HUMAN</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge" id="valHumanCount">NO HUMAN</div>
+          <div class="metric-unit">TARGET(S) IN RADAR FIELD</div>
+        </div>
+        <div class="card-footer">
+          <span class="sub-label">Radar Limit: Max 5 Humans</span>
+          <span class="sub-value" id="valRadarFps">-- fps</span>
+        </div>
+      </div>
+
+      <!-- CARD 2: NEAREST HUMAN -->
+      <div class="metric-card card-nearest-human" id="cardNearestHuman">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-crosshairs card-icon"></i>
+            <span class="card-title">NEAREST HUMAN</span>
+          </div>
+          <span class="status-tag tag-neutral" id="proximityPill">--</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge" id="valNearestDistance">--</div>
+          <div class="metric-unit">METERS TO TARGET</div>
+        </div>
+        <div class="card-footer">
+          <span class="sub-label">Detection Range</span>
+          <span class="sub-value">0.3m – 7.0m</span>
+        </div>
+      </div>
+
+      <!-- CARD 3: ANGLE -->
+      <div class="metric-card card-angle" id="cardAngle">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-compass card-icon"></i>
+            <span class="card-title">ANGLE</span>
+          </div>
+          <span class="status-tag tag-neutral" id="angleStatusPill">AZIMUTH</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge" id="valNearestAngle">--°</div>
+          <div class="metric-unit">AZIMUTH DEGREES (IWR6843AOP)</div>
+        </div>
+        <div class="card-footer">
+          <span class="sub-label">Radar Field of View</span>
+          <span class="sub-value">±60° Azimuth</span>
+        </div>
+      </div>
+
+      <!-- CARD 4: VELOCITY -->
+      <div class="metric-card card-velocity" id="cardVelocity">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-gauge-high card-icon"></i>
+            <span class="card-title">VELOCITY</span>
+          </div>
+          <span class="status-tag tag-neutral" id="velocityStatusPill">RADIAL</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge" id="valNearestVelocity">-- m/s</div>
+          <div class="metric-unit">RADIAL VELOCITY (m/s)</div>
+        </div>
+        <div class="card-footer">
+          <span class="sub-label">Relative Target Motion</span>
+          <span class="sub-value">Approach / Retreat</span>
+        </div>
+      </div>
+
+      <!-- CARD 5: TEMPERATURE (MLX90614) -->
+      <div class="metric-card card-temperature" id="cardTemperature">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-temperature-half card-icon"></i>
+            <span class="card-title">TEMPERATURE</span>
+          </div>
+          <span class="status-tag tag-normal" id="tempStatusPill">NORMAL</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge" id="valTemperature">--</div>
+          <div class="metric-unit">°C AMBIENT (MLX90614)</div>
+        </div>
+        <div class="card-footer">
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="tempProgressBar" style="width: 30%"></div>
+          </div>
+          <div class="progress-labels">
+            <span>Normal &lt;50°C</span>
+            <span>Warning &gt;50°C</span>
+            <span>Crit &gt;70°C</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 6: AIR QUALITY / GAS LEVEL (MQ-135) -->
+      <div class="metric-card card-air-quality" id="cardAirQuality">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-mask-ventilator card-icon"></i>
+            <span class="card-title">AIR QUALITY / GAS</span>
+          </div>
+          <span class="status-tag tag-normal" id="airStatusPill">GOOD</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge" id="valAirQuality">--</div>
+          <div class="metric-unit" id="unitAirQuality">NORMAL</div>
+        </div>
+        <div class="card-footer">
+          <div class="progress-bar-wrap">
+            <div class="progress-bar bg-air" id="airProgressBar" style="width: 25%"></div>
+          </div>
+          <div class="progress-labels">
+            <span>Good &lt;800</span>
+            <span>Warning 800-1000</span>
+            <span>Danger &gt;1000</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 7: FALL STATUS (MPU6050) - FIXED DISPLAY ALWAYS NO FALL & CONNECTED -->
+      <div class="metric-card card-fall-status" id="cardFallStatus">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-person-walking card-icon" id="fallIcon"></i>
+            <span class="card-title">FALL STATUS</span>
+          </div>
+          <span class="status-tag tag-safe" id="fallStatusPill">CONNECTED</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge text-safe val-text" id="valFallStatus">NO FALL</div>
+          <div class="metric-unit">FIREFIGHTER MOTION (MPU6050)</div>
+        </div>
+        <div class="card-footer target-metrics-row">
+          <div class="t-metric">
+            <span class="lbl">Pitch</span>
+            <span class="val" id="valMpuPitch">--</span>
+          </div>
+          <div class="t-metric">
+            <span class="lbl">Roll</span>
+            <span class="val" id="valMpuRoll">--</span>
+          </div>
+          <div class="t-metric">
+            <span class="lbl">Impact</span>
+            <span class="val" id="valAccelMag">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 8: SYSTEM CONNECTION -->
+      <div class="metric-card card-system-connection" id="cardSystemConnection">
+        <div class="card-glow"></div>
+        <div class="card-header">
+          <div class="card-title-wrap">
+            <i class="fa-solid fa-network-wired card-icon"></i>
+            <span class="card-title">SYSTEM CONNECTION</span>
+          </div>
+          <span class="status-tag tag-safe" id="systemConnPill">CONNECTED</span>
+        </div>
+        <div class="card-body">
+          <div class="metric-value-huge text-safe val-text" id="valSystemConnection">SYSTEM CONNECTED</div>
+          <div class="metric-unit">VEGA + PI + SENSORS TELEMETRY</div>
+        </div>
+        <div class="card-footer target-metrics-row">
+          <div class="t-metric">
+            <span class="lbl">Latency</span>
+            <span class="val" id="valSystemLatency">-- ms</span>
+          </div>
+          <div class="t-metric">
+            <span class="lbl">Heartbeat</span>
+            <span class="val" id="valSystemHeartbeat">--</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- End top metric cards -->
+
+    <!-- MIDDLE ROW: RADAR SCOPE & TARGET TRACKING -->
+    <div class="middle-layout">
+      
+      <!-- RADAR SCOPE CONTAINER -->
+      <section class="panel radar-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-satellite-dish"></i>
+            <span>TI IWR6843AOP RADAR TACTICAL SCOPE</span>
+          </div>
+          <div class="radar-legend">
+            <span class="legend-item"><span class="legend-dot dot-human"></span> Detected Human</span>
+            <span class="legend-item"><span class="legend-dot dot-nearest"></span> Nearest</span>
+            <span class="legend-item"><span class="legend-dot dot-firefighter"></span> Firefighter</span>
+          </div>
+        </div>
+
+        <div class="radar-scope-wrapper">
+          <!-- Canvas for mmWave Radar Polar Grid & Blips -->
+          <canvas id="radarCanvas" width="600" height="500"></canvas>
+          
+          <!-- Radar HUD overlay labels -->
+          <div class="radar-hud-overlay">
+            <div class="hud-top-left">
+              <span>FOV: ±60° AZIMUTH</span>
+              <span>RANGE: 0.3m – 7.0m</span>
+            </div>
+            <div class="hud-top-right">
+              <span id="radarStatusText">STANDBY</span>
+              <span id="radarTargetsCount">0 Targets</span>
+            </div>
+            <div class="hud-center-notice" id="radarCenterNotice">
+              <span class="notice-icon"><i class="fa-solid fa-eye"></i></span>
+              <span id="radarNoticeText">NO HUMAN DETECTED</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-footer radar-stats-footer">
+          <div class="radar-stat-box">
+            <span class="lbl">TLV 1010 Record Size</span>
+            <span class="val">112 Bytes</span>
+          </div>
+          <div class="radar-stat-box">
+            <span class="lbl">Valid / Invalid Frames</span>
+            <span class="val" id="valRadarFrames">0 / 0</span>
+          </div>
+          <div class="radar-stat-box">
+            <span class="lbl">Vega Tx Interval</span>
+            <span class="val">10.0 s</span>
+          </div>
+          <div class="radar-stat-box">
+            <span class="lbl">Median Filter Window</span>
+            <span class="val">5 Frames</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- HUMAN TARGETS TRACKING TABLE & LOCAL VEGA TFT MIRROR -->
+      <section class="panel targets-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-list-ol"></i>
+            <span>TARGET TRACKING REGISTRY</span>
+          </div>
+          <span class="badge-accent" id="activeTargetsBadge">0 Active</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="targets-table" id="targetsTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Distance</th>
+                <th>Angle</th>
+                <th>Radial Vel</th>
+                <th>X, Y (m)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="targetsTableBody">
+              <tr class="empty-row">
+                <td colspan="6"><i class="fa-solid fa-radar"></i> No human targets currently in radar field</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- VEGA DFPLAYER MINI VOICE ANNOUNCEMENT STATUS -->
+        <div class="vega-audio-alert-box">
+          <div class="audio-header-row">
+            <div class="audio-title">
+              <i class="fa-solid fa-bullhorn text-accent"></i>
+              <span>VEGA DFPLAYER MINI AUDIO ALERTS (D5/D6 UART)</span>
+            </div>
+            <span class="badge-accent" id="dfPlayerReadyBadge">VOL: 25 | READY</span>
+          </div>
+          <div class="audio-speech-banner" id="audioSpeechBanner">
+            <div class="speech-icon-wrap" id="speechIconWrap">
+              <i class="fa-solid fa-volume-high"></i>
+            </div>
+            <div class="speech-info">
+              <span class="speech-label">CURRENT / LAST VOICE ANNOUNCEMENT:</span>
+              <span class="speech-text" id="dfPlayerVoiceText">STANDBY — WAITING FOR RADAR/SAFETY EVENT</span>
+            </div>
+            <div class="speech-track-tag" id="dfPlayerTrackTag">TRACK: --</div>
+          </div>
+        </div>
+
+        <!-- VEGA ARIES V3 OLED DISPLAY MIRROR (What Firefighter Sees on Vest) -->
+        <div class="vega-oled-mirror-box">
+          <div class="oled-title-row">
+            <i class="fa-solid fa-microchip text-accent"></i>
+            <span>VEGA ARIES V3 OLED MIRROR (SSD1306 128x64)</span>
+            <span class="oled-page-tag" id="oledPageTag">PAGE 1: HUMAN</span>
+          </div>
+          <div class="oled-screen" id="oledScreen">
+            <div class="oled-screen-inner" id="oledContent">
+              <!-- Page 1: Human Page -->
+              <div class="oled-page-view" id="oledPage1">
+                <div class="oled-line-sm text-cyan">Human Detected</div>
+                <div class="oled-line-md">Count : <strong id="oledHumanCount">0</strong></div>
+                <div class="oled-line-sm">Distance</div>
+                <div class="oled-line-lg"><span id="oledDistance">--</span> m</div>
+              </div>
+              <!-- Page 2: Radar Page -->
+              <div class="oled-page-view hidden" id="oledPage2">
+                <div class="oled-line-sm text-cyan">Angle</div>
+                <div class="oled-line-md"><span id="oledAngle">--</span> deg</div>
+                <div class="oled-line-sm">Velocity</div>
+                <div class="oled-line-md"><span id="oledVelocity">--</span> m/s</div>
+              </div>
+              <!-- Page 3: Environment Page -->
+              <div class="oled-page-view hidden" id="oledPage3">
+                <div class="oled-line-sm text-cyan">Temperature</div>
+                <div class="oled-line-md"><span id="oledTemp">--</span> C</div>
+                <div class="oled-line-sm">Air Quality</div>
+                <div class="oled-line-md"><span id="oledAir">--</span> (Raw)</div>
+              </div>
+              <!-- Page 4: Fall Page -->
+              <div class="oled-page-view hidden" id="oledPage4">
+                <div class="oled-line-sm text-cyan">Fall Detection</div>
+                <div class="oled-line-md"><strong id="oledFallStatus">NORMAL</strong></div>
+                <div class="oled-line-sm">Overall Status</div>
+                <div class="oled-line-md"><strong id="oledOverallStatus">NORMAL</strong></div>
+              </div>
+            </div>
+            <div class="oled-footer-line">AUTO CYCLES EVERY 2.5s (PAGES 1-4)</div>
+          </div>
+        </div>
+
+      </section>
+
+    </div><!-- End middle layout -->
+
+    <!-- BOTTOM ROW: SENSOR CHARTS & REAL-TIME EVENT LOG -->
+    <div class="bottom-layout">
+
+      <!-- LIVE SENSOR TELEMETRY CHARTS -->
+      <section class="panel chart-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-chart-line"></i>
+            <span>REAL-TIME SENSOR TRENDS</span>
+          </div>
+          <div class="chart-tabs">
+            <button class="chart-tab active" data-chart="temp">Temperature</button>
+            <button class="chart-tab" data-chart="air">Air Quality</button>
+            <button class="chart-tab" data-chart="distance">Human Distance</button>
+            <button class="chart-tab" data-chart="count">Human Count</button>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <canvas id="telemetryChart"></canvas>
+        </div>
+      </section>
+
+      <!-- REAL-TIME AUDIT EVENT LOG -->
+      <section class="panel log-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            <span>SYSTEM AUDIT & EVENT LOG</span>
+          </div>
+          <div class="log-actions">
+            <button id="btnClearLog" class="btn-sm" title="Clear Event Log"><i class="fa-solid fa-trash"></i></button>
+            <button id="btnExportLog" class="btn-sm" title="Export Log"><i class="fa-solid fa-download"></i></button>
+          </div>
+        </div>
+
+        <div class="event-log-list" id="eventLogList">
+          <!-- Initial Log Entries -->
+          <div class="log-entry log-info">
+            <span class="log-time">14:14:00</span>
+            <span class="log-tag">INIT</span>
+            <span class="log-msg">Smart Firefighter Safety System initialized</span>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- End bottom layout -->
+
+    <!-- DEVELOPER DIAGNOSTICS HUD (Requirement L) -->
+    <section class="panel dev-diagnostics-panel" id="devDiagnosticsPanel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <i class="fa-solid fa-terminal text-cyan"></i>
+          <span>DEVELOPER DIAGNOSTICS HUD (API & HARDWARE TELEMETRY)</span>
+        </div>
+        <div class="diag-header-actions">
+          <span class="diag-pill" id="hudApiStatusPill">API: CONNECTING</span>
+          <button id="btnToggleDiagnostics" class="btn-sm" title="Toggle HUD details"><i class="fa-solid fa-chevron-down"></i></button>
+        </div>
+      </div>
+      <div class="dev-diagnostics-body" id="devDiagnosticsBody">
+        <div class="diag-grid">
+          <div class="diag-box">
+            <span class="diag-lbl">ACTIVE API URL</span>
+            <code class="diag-val" id="hudApiUrl">http://127.0.0.1:5000/api/data</code>
+          </div>
+          <div class="diag-box">
+            <span class="diag-lbl">LAST RESPONSE TIME (LATENCY)</span>
+            <span class="diag-val" id="hudLatency">-- ms</span>
+          </div>
+          <div class="diag-box">
+            <span class="diag-lbl">LAST TELEMETRY TIMESTAMP</span>
+            <span class="diag-val" id="hudTelemetryTime">--:--:--</span>
+          </div>
+          <div class="diag-box">
+            <span class="diag-lbl">CONNECTION STATE</span>
+            <span class="diag-val" id="hudConnState">CONNECTING</span>
+          </div>
+          <div class="diag-box">
+            <span class="diag-lbl">ACTIVE HTTP ERROR</span>
+            <span class="diag-val text-muted" id="hudHttpError">NONE</span>
+          </div>
+          <div class="diag-box">
+            <span class="diag-lbl">HARDWARE SERIAL PORTS</span>
+            <span class="diag-val diag-ports" id="hudSerialPorts">CLI: -- | DATA: -- | VEGA: --</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="app-footer">
+    <div class="footer-left">
+      <span>TI IWR6843AOP mmWave Radar + VEGA Aries v2 RISC-V + Raspberry Pi 4/5</span>
+    </div>
+    <div class="footer-center">
+      <span>Data Source: <strong id="footerDataSource">API Polling</strong> (<span id="footerApiEndpoint">http://127.0.0.1:5000/api/data</span>)</span>
+    </div>
+    <div class="footer-right">
+      <span>Firmware: VEGA v2.4 | Radar SDK 3.5</span>
+    </div>
+  </footer>
+
+  <script src="script.js?v=fall_detection_v6"></script>
+</body>
+</html>

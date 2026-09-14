@@ -1,0 +1,13 @@
+# Smart Firefighter Safety System - Raspberry Pi Dependencies
+# Python Version: 3.7+ (Recommended 3.9+)
+
+# Hardware Serial Communication (CLI, Data, and VEGA UART)
+pyserial>=3.5
+
+# Standard Library Modules (Pre-installed with Python 3):
+# - http.server (Embedded HTTP JSON REST API)
+# - threading (Concurrent radar streaming & VEGA listeners)
+# - math (Coordinate trigonometry & transformation)
+# - json (Telemetry serialization)
+# - time (Sampling rate and timer intervals)
+# - glob, os, sys (Path resolution & port detection)
