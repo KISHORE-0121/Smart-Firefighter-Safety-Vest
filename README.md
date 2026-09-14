@@ -14,10 +14,10 @@ Experience the **Smart Firefighter Safety Vest** in action through our project d
 
 | Name | Responsibility |
 |------|----------------|
-| **KISHORE R B** | (Team Captain) 
-| **LOGESH P** |
-| **YUVARAJ P** |
-| **SUJITH KRISHNA R** | 
+| **KISHORE R B**  | Team Captain & system integration|
+| **LOGESH P** | Hardware |
+| **YUVARAJ P** | Programming 
+| **SUJITH KRISHNA R** | website |
 
 ---
 
