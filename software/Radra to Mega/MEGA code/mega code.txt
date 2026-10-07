@@ -13,7 +13,12 @@
 #define OLED_RESET -1
 #define OLED_ADDRESS 0x3C
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_SSD1306 display(
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+  &Wire,
+  OLED_RESET
+);
 
 // ============================================================
 // SERIAL CONNECTIONS
@@ -23,16 +28,9 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // Serial2 = HC-05
 // Serial3 = DFPlayer Mini
 //
-// Laptop Python sends:
-//
-// H,1,3.25,-10.50,0.40
-// H,2,4.10,15.20,0.30
-// N,0,0,0,0
-//
 // ============================================================
 
 #define RADAR_SERIAL Serial
-
 #define HC05_SERIAL Serial2
 #define DFPLAYER_SERIAL Serial3
 
@@ -51,6 +49,40 @@ DFRobotDFPlayerMini dfPlayer;
 #define DFPLAYER_BAUD 9600
 
 bool dfPlayerAvailable = false;
+
+// ============================================================
+// DFPLAYER AUDIO FILE NUMBERS
+// ============================================================
+
+#define AUDIO_HUMAN       1
+#define AUDIO_NO_HUMAN   2
+#define AUDIO_LOW_AIR    3
+#define AUDIO_HIGH_TEMP  4
+
+// Numbers
+#define AUDIO_ONE        5
+#define AUDIO_TWO        6
+#define AUDIO_THREE      7
+#define AUDIO_FOUR       8
+#define AUDIO_FIVE       9
+#define AUDIO_SIX       10
+#define AUDIO_SEVEN     11
+#define AUDIO_EIGHT     12
+#define AUDIO_NINE      13
+#define AUDIO_ZERO      14
+
+#define AUDIO_POINT     15
+#define AUDIO_METERS    16
+
+// ============================================================
+// DFPLAYER ANNOUNCEMENT CONTROL
+// ============================================================
+
+bool announcementRunning = false;
+
+unsigned long lastAnnouncement = 0;
+
+#define ANNOUNCEMENT_INTERVAL 5000
 
 // ============================================================
 // MLX90614
@@ -107,6 +139,15 @@ float humanAngle = 0.0;
 float humanVelocity = 0.0;
 
 bool humanDetected = false;
+
+// ============================================================
+// PREVIOUS RADAR DATA
+// ============================================================
+
+int previousHumanCount = 0;
+float previousHumanDistance = 0.0;
+
+bool previousHumanDetected = false;
 
 // ============================================================
 // FALL DETECTION
@@ -197,11 +238,15 @@ void updateFallDetection();
 
 void sendBluetoothData();
 
-void playHumanAlert();
+// DFPlayer
+void playHumanAnnouncement();
 void playNoHumanAlert();
 void playAirAlert();
 void playTemperatureAlert();
 void playFallAlert();
+
+void playNumber(int number);
+void playDistance(float distance);
 
 float readMLXTemperature(uint8_t registerAddress);
 
@@ -248,12 +293,10 @@ void setup()
   {
     while (1)
     {
-      // OLED initialization failed
     }
   }
 
   display.clearDisplay();
-
   display.setTextColor(SSD1306_WHITE);
 
   display.setTextSize(2);
@@ -272,7 +315,7 @@ void setup()
   delay(2000);
 
   // ----------------------------------------------------------
-  // MPU6050 initialization
+  // MPU6050
   // ----------------------------------------------------------
 
   writeMPURegister(0x6B, 0x00);
@@ -294,10 +337,16 @@ void setup()
     dfPlayer.volume(25);
 
     dfPlayer.EQ(DFPLAYER_EQ_NORMAL);
+
+    delay(500);
+
+    RADAR_SERIAL.println("DFPlayer: READY");
   }
   else
   {
     dfPlayerAvailable = false;
+
+    RADAR_SERIAL.println("DFPlayer: NOT FOUND");
   }
 
   // ----------------------------------------------------------
@@ -315,18 +364,18 @@ void setup()
   RADAR_SERIAL.println(" VEGA MEGA 2560 READY");
   RADAR_SERIAL.println("=================================");
   RADAR_SERIAL.println("USB Radar Interface : READY");
-  RADAR_SERIAL.println("OLED                 : READY");
-  RADAR_SERIAL.println("MLX90614             : READY");
-  RADAR_SERIAL.println("MQ135                : READY");
+  RADAR_SERIAL.println("OLED                : READY");
+  RADAR_SERIAL.println("MLX90614            : READY");
+  RADAR_SERIAL.println("MQ135               : READY");
   RADAR_SERIAL.println("MPU6050              : READY");
 
   if (dfPlayerAvailable)
   {
-    RADAR_SERIAL.println("DFPlayer             : READY");
+    RADAR_SERIAL.println("DFPlayer            : READY");
   }
   else
   {
-    RADAR_SERIAL.println("DFPlayer             : NOT FOUND");
+    RADAR_SERIAL.println("DFPlayer            : NOT FOUND");
   }
 
   RADAR_SERIAL.println("=================================");
@@ -339,9 +388,9 @@ void setup()
 
 void loop()
 {
-  // ----------------------------------------------------------
-  // 1. RECEIVE RADAR DATA FROM LAPTOP
-  // ----------------------------------------------------------
+  // ==========================================================
+  // 1. RECEIVE RADAR DATA
+  // ==========================================================
 
   while (RADAR_SERIAL.available() > 0)
   {
@@ -363,7 +412,6 @@ void loop()
     {
       radarLine += incomingChar;
 
-      // Safety limit
       if (radarLine.length() > 100)
       {
         radarLine = "";
@@ -371,9 +419,9 @@ void loop()
     }
   }
 
-  // ----------------------------------------------------------
-  // 2. READ MLX90614
-  // ----------------------------------------------------------
+  // ==========================================================
+  // 2. MLX90614
+  // ==========================================================
 
   if (millis() - lastTemperatureRead >= TEMPERATURE_INTERVAL)
   {
@@ -382,9 +430,9 @@ void loop()
     readMLX90614();
   }
 
-  // ----------------------------------------------------------
-  // 3. READ MQ135
-  // ----------------------------------------------------------
+  // ==========================================================
+  // 3. MQ135
+  // ==========================================================
 
   if (millis() - lastAirRead >= AIR_INTERVAL)
   {
@@ -393,9 +441,9 @@ void loop()
     readMQ135();
   }
 
-  // ----------------------------------------------------------
-  // 4. READ MPU6050
-  // ----------------------------------------------------------
+  // ==========================================================
+  // 4. MPU6050
+  // ==========================================================
 
   if (millis() - lastMPURead >= MPU_INTERVAL)
   {
@@ -406,9 +454,9 @@ void loop()
     updateFallDetection();
   }
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // 5. OLED PAGE ROTATION
-  // ----------------------------------------------------------
+  // ==========================================================
 
   if (millis() - lastDisplayChange >= DISPLAY_PAGE_INTERVAL)
   {
@@ -442,9 +490,9 @@ void loop()
     }
   }
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // 6. BLUETOOTH
-  // ----------------------------------------------------------
+  // ==========================================================
 
   if (millis() - lastBluetoothSend >= BLUETOOTH_INTERVAL)
   {
@@ -473,7 +521,9 @@ void processRadarMessage(String message)
   // H,count,distance,angle,velocity
   //
   // Example:
-  // H,1,3.25,-10.50,0.40
+  //
+  // H,2,3.25,-10.50,0.40
+  //
   // ==========================================================
 
   if (message.charAt(0) == 'H')
@@ -503,7 +553,12 @@ void processRadarMessage(String message)
     String velocityString =
         message.substring(comma4 + 1);
 
-    humanCount = countString.toInt();
+    // --------------------------------------------------------
+    // Update radar variables
+    // --------------------------------------------------------
+
+    humanCount =
+        countString.toInt();
 
     humanDistance =
         distanceString.toFloat();
@@ -514,17 +569,11 @@ void processRadarMessage(String message)
     humanVelocity =
         velocityString.toFloat();
 
-    if (humanCount > 0)
-    {
-      humanDetected = true;
-    }
-    else
-    {
-      humanDetected = false;
-    }
+    humanDetected =
+        (humanCount > 0);
 
     // --------------------------------------------------------
-    // Debug information
+    // Print radar information
     // --------------------------------------------------------
 
     RADAR_SERIAL.println();
@@ -548,23 +597,71 @@ void processRadarMessage(String message)
     RADAR_SERIAL.println("---------------------------");
 
     // --------------------------------------------------------
-    // Immediately update OLED
+    // Update OLED immediately
     // --------------------------------------------------------
 
-    showHumanPage();
+    if (displayPage == 0)
+    {
+      showHumanPage();
+    }
 
     // --------------------------------------------------------
-    // Audio
+    // HUMAN ANNOUNCEMENT
     // --------------------------------------------------------
+    //
+    // Only announce when:
+    //
+    // 1. Human appears for first time
+    // OR
+    // 2. Human count changes
+    // OR
+    // 3. Distance changes significantly
+    //
+    // --------------------------------------------------------
+
+    bool newHuman =
+        humanDetected &&
+        !previousHumanDetected;
+
+    bool countChanged =
+        (humanCount != previousHumanCount);
+
+    bool distanceChanged =
+        (fabs(humanDistance - previousHumanDistance) >= 0.5);
+
+    bool enoughTimePassed =
+        (millis() - lastAnnouncement >=
+         ANNOUNCEMENT_INTERVAL);
 
     if (humanDetected)
     {
-      playHumanAlert();
+      if ((newHuman ||
+           countChanged ||
+           distanceChanged) &&
+          enoughTimePassed)
+      {
+        playHumanAnnouncement();
+
+        lastAnnouncement = millis();
+      }
     }
+
+    // --------------------------------------------------------
+    // Save previous values
+    // --------------------------------------------------------
+
+    previousHumanDetected =
+        humanDetected;
+
+    previousHumanCount =
+        humanCount;
+
+    previousHumanDistance =
+        humanDistance;
   }
 
   // ==========================================================
-  // NO HUMAN MESSAGE
+  // NO HUMAN
   //
   // N,0,0,0,0
   // ==========================================================
@@ -581,10 +678,323 @@ void processRadarMessage(String message)
 
     RADAR_SERIAL.println("NO HUMAN DETECTED");
 
-    showHumanPage();
+    if (displayPage == 0)
+    {
+      showHumanPage();
+    }
 
-    playNoHumanAlert();
+    // --------------------------------------------------------
+    // Announce no human only when state changes
+    // --------------------------------------------------------
+
+    if (previousHumanDetected)
+    {
+      playNoHumanAlert();
+    }
+
+    previousHumanDetected = false;
+    previousHumanCount = 0;
+    previousHumanDistance = 0;
   }
+}
+
+// ============================================================
+// PLAY HUMAN ANNOUNCEMENT
+// ============================================================
+//
+// Example:
+//
+// Human detected.
+// Two.
+// Three point two five meters.
+//
+// ============================================================
+
+void playHumanAnnouncement()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  announcementRunning = true;
+
+  // ----------------------------------------------------------
+  // 1. HUMAN DETECTED
+  // ----------------------------------------------------------
+
+  dfPlayer.play(AUDIO_HUMAN);
+
+  delay(1200);
+
+  // ----------------------------------------------------------
+  // 2. HUMAN COUNT
+  // ----------------------------------------------------------
+
+  playNumber(humanCount);
+
+  delay(700);
+
+  // ----------------------------------------------------------
+  // 3. DISTANCE
+  // ----------------------------------------------------------
+
+  playDistance(humanDistance);
+
+  delay(1000);
+
+  announcementRunning = false;
+}
+
+// ============================================================
+// PLAY NUMBER
+// ============================================================
+//
+// 1  -> 0005
+// 2  -> 0006
+// 3  -> 0007
+// ...
+// 9  -> 0013
+// 0  -> 0014
+//
+// ============================================================
+
+void playNumber(int number)
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  if (number < 0)
+  {
+    return;
+  }
+
+  // ----------------------------------------------------------
+  // Zero
+  // ----------------------------------------------------------
+
+  if (number == 0)
+  {
+    dfPlayer.play(AUDIO_ZERO);
+
+    delay(500);
+
+    return;
+  }
+
+  // ----------------------------------------------------------
+  // For human count, normally 1-5
+  // ----------------------------------------------------------
+
+  if (number >= 1 && number <= 9)
+  {
+    int audioNumber =
+        AUDIO_ONE + (number - 1);
+
+    dfPlayer.play(audioNumber);
+
+    delay(500);
+
+    return;
+  }
+
+  // ----------------------------------------------------------
+  // For numbers greater than 9
+  //
+  // Example:
+  //
+  // 12
+  //
+  // One
+  // Two
+  //
+  // ----------------------------------------------------------
+
+  int tens = number / 10;
+  int ones = number % 10;
+
+  if (tens >= 1 && tens <= 9)
+  {
+    int tensAudio =
+        AUDIO_ONE + (tens - 1);
+
+    dfPlayer.play(tensAudio);
+
+    delay(500);
+  }
+
+  if (ones > 0)
+  {
+    int onesAudio =
+        AUDIO_ONE + (ones - 1);
+
+    dfPlayer.play(onesAudio);
+
+    delay(500);
+  }
+}
+
+// ============================================================
+// PLAY DISTANCE
+// ============================================================
+//
+// Example:
+//
+// 3.25 m
+//
+// → Three
+// → Point
+// → Two
+// → Five
+// → Meters
+//
+// ============================================================
+
+void playDistance(float distance)
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  // ----------------------------------------------------------
+  // Limit distance
+  // ----------------------------------------------------------
+
+  if (distance < 0)
+  {
+    distance = 0;
+  }
+
+  if (distance > 99.9)
+  {
+    distance = 99.9;
+  }
+
+  // ----------------------------------------------------------
+  // Convert to one decimal place
+  //
+  // Example:
+  //
+  // 3.25 → 3.3
+  //
+  // ----------------------------------------------------------
+
+  int wholePart =
+      (int)distance;
+
+  int decimalPart =
+      (int)((distance - wholePart) * 10.0 + 0.5);
+
+  // ----------------------------------------------------------
+  // Handle rounding
+  // ----------------------------------------------------------
+
+  if (decimalPart >= 10)
+  {
+    wholePart++;
+    decimalPart = 0;
+  }
+
+  // ----------------------------------------------------------
+  // Whole number
+  // ----------------------------------------------------------
+
+  playNumber(wholePart);
+
+  delay(400);
+
+  // ----------------------------------------------------------
+  // Decimal point
+  // ----------------------------------------------------------
+
+  if (decimalPart > 0)
+  {
+    dfPlayer.play(AUDIO_POINT);
+
+    delay(400);
+
+    playNumber(decimalPart);
+
+    delay(400);
+  }
+
+  // ----------------------------------------------------------
+  // Meters
+  // ----------------------------------------------------------
+
+  dfPlayer.play(AUDIO_METERS);
+
+  delay(600);
+}
+
+// ============================================================
+// NO HUMAN ALERT
+// ============================================================
+
+void playNoHumanAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(AUDIO_NO_HUMAN);
+
+  delay(1000);
+}
+
+// ============================================================
+// AIR ALERT
+// ============================================================
+
+void playAirAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(AUDIO_LOW_AIR);
+
+  delay(1000);
+}
+
+// ============================================================
+// TEMPERATURE ALERT
+// ============================================================
+
+void playTemperatureAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(AUDIO_HIGH_TEMP);
+
+  delay(1000);
+}
+
+// ============================================================
+// FALL ALERT
+// ============================================================
+
+void playFallAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  // Currently using high-temperature/audio file 4.
+  // Replace with a dedicated fall audio file if available.
+
+  dfPlayer.play(AUDIO_HIGH_TEMP);
+
+  delay(1000);
 }
 
 // ============================================================
@@ -623,7 +1033,6 @@ void showHumanPage()
     display.print(humanAngle, 1);
     display.println(" deg");
   }
-
   else
   {
     display.setTextSize(2);
@@ -654,6 +1063,7 @@ void showMotionPage()
   display.setTextColor(SSD1306_WHITE);
 
   display.setTextSize(2);
+
   display.setCursor(25, 0);
   display.println("MOTION");
 
@@ -693,6 +1103,7 @@ void showEnvironmentPage()
   display.setTextColor(SSD1306_WHITE);
 
   display.setTextSize(2);
+
   display.setCursor(12, 0);
   display.println("ENVIRON");
 
@@ -796,8 +1207,9 @@ float readMLXTemperature(uint8_t registerAddress)
   }
 
   Wire.requestFrom(
-      MLX90614_ADDRESS,
-      (uint8_t)3);
+    MLX90614_ADDRESS,
+    (uint8_t)3
+  );
 
   if (Wire.available() < 3)
   {
@@ -806,7 +1218,9 @@ float readMLXTemperature(uint8_t registerAddress)
 
   uint8_t lowByte = Wire.read();
   uint8_t highByte = Wire.read();
-  uint8_t pec = Wire.read();
+
+  // PEC byte
+  Wire.read();
 
   uint16_t rawValue =
       ((uint16_t)highByte << 8) |
@@ -847,10 +1261,8 @@ void readMLX90614()
 
 void readMQ135()
 {
-  int adcValue = analogRead(MQ135_PIN);
-
-  // Simple approximate conversion.
-  // This is NOT laboratory-calibrated ppm.
+  int adcValue =
+      analogRead(MQ135_PIN);
 
   if (adcValue <= 0)
   {
@@ -861,6 +1273,12 @@ void readMQ135()
   float voltage =
       adcValue * (5.0 / 1023.0);
 
+  if (voltage <= 0.01)
+  {
+    airPPM = 0;
+    return;
+  }
+
   float sensorResistance =
       ((5.0 - voltage) / voltage) * 10.0;
 
@@ -870,7 +1288,9 @@ void readMQ135()
     return;
   }
 
-  // Approximate model
+  // Approximate model.
+  // NOT laboratory calibrated.
+
   airPPM =
       1000.0 *
       (10.0 / sensorResistance);
@@ -880,9 +1300,13 @@ void readMQ135()
 // MPU6050 WRITE
 // ============================================================
 
-void writeMPURegister(uint8_t reg, uint8_t value)
+void writeMPURegister(
+  uint8_t reg,
+  uint8_t value)
 {
-  Wire.beginTransmission(MPU6050_ADDRESS);
+  Wire.beginTransmission(
+    MPU6050_ADDRESS
+  );
 
   Wire.write(reg);
   Wire.write(value);
@@ -896,15 +1320,18 @@ void writeMPURegister(uint8_t reg, uint8_t value)
 
 void readMPUData()
 {
-  Wire.beginTransmission(MPU6050_ADDRESS);
+  Wire.beginTransmission(
+    MPU6050_ADDRESS
+  );
 
   Wire.write(0x3B);
 
   Wire.endTransmission(false);
 
   Wire.requestFrom(
-      MPU6050_ADDRESS,
-      (uint8_t)14);
+    MPU6050_ADDRESS,
+    (uint8_t)14
+  );
 
   if (Wire.available() < 14)
   {
@@ -923,6 +1350,7 @@ void readMPUData()
       ((int16_t)Wire.read() << 8) |
       Wire.read();
 
+  // Temperature
   Wire.read();
   Wire.read();
 
@@ -947,33 +1375,48 @@ void readMPU6050()
 {
   readMPUData();
 
-  // ±8g -> 4096 LSB/g
+  // ±8g
+  ax_g =
+      accelX / 4096.0;
 
-  ax_g = accelX / 4096.0;
-  ay_g = accelY / 4096.0;
-  az_g = accelZ / 4096.0;
+  ay_g =
+      accelY / 4096.0;
 
-  // ±500 dps -> 65.5 LSB/(deg/s)
+  az_g =
+      accelZ / 4096.0;
 
-  gx_dps = gyroX / 65.5;
-  gy_dps = gyroY / 65.5;
-  gz_dps = gyroZ / 65.5;
+  // ±500 dps
+  gx_dps =
+      gyroX / 65.5;
+
+  gy_dps =
+      gyroY / 65.5;
+
+  gz_dps =
+      gyroZ / 65.5;
 
   totalAcceleration =
       sqrt(
-          ax_g * ax_g +
-          ay_g * ay_g +
-          az_g * az_g);
+        ax_g * ax_g +
+        ay_g * ay_g +
+        az_g * az_g
+      );
 
-  // Tilt from Z axis
+  float normalizedZ =
+      az_g /
+      max(totalAcceleration, 0.001f);
+
+  normalizedZ =
+      constrain(
+        normalizedZ,
+        -1.0,
+        1.0
+      );
 
   tiltAngle =
-      acos(
-          constrain(
-              az_g / max(totalAcceleration, 0.001),
-              -1.0,
-              1.0))
-      * 180.0 / PI;
+      acos(normalizedZ)
+      * 180.0
+      / PI;
 }
 
 // ============================================================
@@ -982,17 +1425,16 @@ void readMPU6050()
 
 void updateFallDetection()
 {
-  unsigned long now = millis();
+  unsigned long now =
+      millis();
 
   // ==========================================================
-  // Already detected
+  // ALREADY DETECTED
   // ==========================================================
 
   if (fallState == FALL_DETECTED)
   {
     fallAlert = true;
-
-    // Check recovery
 
     if (tiltAngle < RECOVERY_TILT)
     {
@@ -1022,54 +1464,66 @@ void updateFallDetection()
   // FREE FALL
   // ==========================================================
 
-  if (totalAcceleration < FREE_FALL_THRESHOLD)
+  if (totalAcceleration <
+      FREE_FALL_THRESHOLD)
   {
     if (freeFallStart == 0)
     {
       freeFallStart = now;
     }
 
-    fallState = FALL_FREE_FALL;
+    fallState =
+        FALL_FREE_FALL;
   }
 
   // ==========================================================
   // IMPACT
   // ==========================================================
 
-  else if (fallState == FALL_FREE_FALL)
+  else if (fallState ==
+           FALL_FREE_FALL)
   {
-    if (totalAcceleration >= IMPACT_THRESHOLD)
+    if (totalAcceleration >=
+        IMPACT_THRESHOLD)
     {
       impactStart = now;
 
-      fallState = FALL_IMPACT;
+      fallState =
+          FALL_IMPACT;
     }
+
     else if (now - freeFallStart > 1500)
     {
-      fallState = FALL_NORMAL;
+      fallState =
+          FALL_NORMAL;
 
       freeFallStart = 0;
     }
   }
 
   // ==========================================================
-  // AFTER IMPACT CHECK TILT
+  // AFTER IMPACT → CHECK TILT
   // ==========================================================
 
-  else if (fallState == FALL_IMPACT)
+  else if (fallState ==
+           FALL_IMPACT)
   {
-    if (tiltAngle >= TILT_THRESHOLD)
+    if (tiltAngle >=
+        TILT_THRESHOLD)
     {
       if (abnormalTiltStart == 0)
       {
         abnormalTiltStart = now;
       }
 
-      fallState = FALL_TILT;
+      fallState =
+          FALL_TILT;
 
-      if (now - abnormalTiltStart >= TILT_CONFIRM_TIME)
+      if (now - abnormalTiltStart >=
+          TILT_CONFIRM_TIME)
       {
-        fallState = FALL_DETECTED;
+        fallState =
+            FALL_DETECTED;
 
         fallAlert = true;
 
@@ -1078,7 +1532,8 @@ void updateFallDetection()
     }
     else
     {
-      fallState = FALL_NORMAL;
+      fallState =
+          FALL_NORMAL;
 
       freeFallStart = 0;
       abnormalTiltStart = 0;
@@ -1089,13 +1544,17 @@ void updateFallDetection()
   // ABNORMAL TILT
   // ==========================================================
 
-  else if (fallState == FALL_TILT)
+  else if (fallState ==
+           FALL_TILT)
   {
-    if (tiltAngle >= TILT_THRESHOLD)
+    if (tiltAngle >=
+        TILT_THRESHOLD)
     {
-      if (now - abnormalTiltStart >= TILT_CONFIRM_TIME)
+      if (now - abnormalTiltStart >=
+          TILT_CONFIRM_TIME)
       {
-        fallState = FALL_DETECTED;
+        fallState =
+            FALL_DETECTED;
 
         fallAlert = true;
 
@@ -1104,7 +1563,8 @@ void updateFallDetection()
     }
     else
     {
-      fallState = FALL_NORMAL;
+      fallState =
+          FALL_NORMAL;
 
       abnormalTiltStart = 0;
     }
@@ -1116,9 +1576,11 @@ void updateFallDetection()
 
   else
   {
-    if (tiltAngle < TILT_THRESHOLD)
+    if (tiltAngle <
+        TILT_THRESHOLD)
     {
-      fallState = FALL_NORMAL;
+      fallState =
+          FALL_NORMAL;
 
       fallAlert = false;
 
@@ -1162,74 +1624,4 @@ void sendBluetoothData()
   {
     HC05_SERIAL.println("NORMAL");
   }
-}
-
-// ============================================================
-// DFPLAYER - HUMAN
-// ============================================================
-
-void playHumanAlert()
-{
-  if (!dfPlayerAvailable)
-  {
-    return;
-  }
-
-  dfPlayer.play(1);
-}
-
-// ============================================================
-// DFPLAYER - NO HUMAN
-// ============================================================
-
-void playNoHumanAlert()
-{
-  if (!dfPlayerAvailable)
-  {
-    return;
-  }
-
-  dfPlayer.play(2);
-}
-
-// ============================================================
-// DFPLAYER - AIR
-// ============================================================
-
-void playAirAlert()
-{
-  if (!dfPlayerAvailable)
-  {
-    return;
-  }
-
-  dfPlayer.play(3);
-}
-
-// ============================================================
-// DFPLAYER - TEMPERATURE
-// ============================================================
-
-void playTemperatureAlert()
-{
-  if (!dfPlayerAvailable)
-  {
-    return;
-  }
-
-  dfPlayer.play(4);
-}
-
-// ============================================================
-// DFPLAYER - FALL
-// ============================================================
-
-void playFallAlert()
-{
-  if (!dfPlayerAvailable)
-  {
-    return;
-  }
-
-  dfPlayer.play(4);
 }
