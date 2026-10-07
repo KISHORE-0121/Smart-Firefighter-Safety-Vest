@@ -1,0 +1,1235 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <DFRobotDFPlayerMini.h>
+#include <math.h>
+
+// ============================================================
+// OLED
+// ============================================================
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define OLED_ADDRESS 0x3C
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// ============================================================
+// SERIAL CONNECTIONS
+// ============================================================
+//
+// Serial  = USB cable to Laptop
+// Serial2 = HC-05
+// Serial3 = DFPlayer Mini
+//
+// Laptop Python sends:
+//
+// H,1,3.25,-10.50,0.40
+// H,2,4.10,15.20,0.30
+// N,0,0,0,0
+//
+// ============================================================
+
+#define RADAR_SERIAL Serial
+
+#define HC05_SERIAL Serial2
+#define DFPLAYER_SERIAL Serial3
+
+// ============================================================
+// HC-05
+// ============================================================
+
+#define HC05_BAUD 9600
+
+// ============================================================
+// DFPLAYER
+// ============================================================
+
+DFRobotDFPlayerMini dfPlayer;
+
+#define DFPLAYER_BAUD 9600
+
+bool dfPlayerAvailable = false;
+
+// ============================================================
+// MLX90614
+// ============================================================
+
+#define MLX90614_ADDRESS 0x5A
+
+float ambientTemperature = 0.0;
+float objectTemperature = 0.0;
+
+// ============================================================
+// MQ135
+// ============================================================
+
+#define MQ135_PIN A0
+
+float airPPM = 0.0;
+
+#define AIR_WARNING_THRESHOLD 1000.0
+
+// ============================================================
+// MPU6050
+// ============================================================
+
+#define MPU6050_ADDRESS 0x68
+
+int16_t accelX;
+int16_t accelY;
+int16_t accelZ;
+
+int16_t gyroX;
+int16_t gyroY;
+int16_t gyroZ;
+
+float ax_g;
+float ay_g;
+float az_g;
+
+float gx_dps;
+float gy_dps;
+float gz_dps;
+
+float totalAcceleration = 0.0;
+float tiltAngle = 0.0;
+
+// ============================================================
+// HUMAN DETECTION DATA
+// ============================================================
+
+int humanCount = 0;
+
+float humanDistance = 0.0;
+float humanAngle = 0.0;
+float humanVelocity = 0.0;
+
+bool humanDetected = false;
+
+// ============================================================
+// FALL DETECTION
+// ============================================================
+
+enum FallState
+{
+  FALL_NORMAL,
+  FALL_FREE_FALL,
+  FALL_IMPACT,
+  FALL_TILT,
+  FALL_DETECTED
+};
+
+FallState fallState = FALL_NORMAL;
+
+unsigned long freeFallStart = 0;
+unsigned long impactStart = 0;
+unsigned long abnormalTiltStart = 0;
+unsigned long recoveryStart = 0;
+
+bool fallAlert = false;
+
+// ============================================================
+// FALL THRESHOLDS
+// ============================================================
+
+#define FREE_FALL_THRESHOLD 0.5
+#define IMPACT_THRESHOLD 2.5
+#define TILT_THRESHOLD 60.0
+#define RECOVERY_TILT 35.0
+
+#define TILT_CONFIRM_TIME 1500
+#define RECOVERY_TIME 1200
+
+// ============================================================
+// OLED PAGE
+// ============================================================
+
+int displayPage = 0;
+
+unsigned long lastDisplayChange = 0;
+
+#define DISPLAY_PAGE_INTERVAL 2500
+
+// ============================================================
+// BLUETOOTH
+// ============================================================
+
+unsigned long lastBluetoothSend = 0;
+
+#define BLUETOOTH_INTERVAL 1000
+
+// ============================================================
+// SENSOR TIMERS
+// ============================================================
+
+unsigned long lastTemperatureRead = 0;
+unsigned long lastAirRead = 0;
+unsigned long lastMPURead = 0;
+
+#define TEMPERATURE_INTERVAL 1000
+#define AIR_INTERVAL 2000
+#define MPU_INTERVAL 100
+
+// ============================================================
+// RADAR SERIAL BUFFER
+// ============================================================
+
+String radarLine = "";
+
+// ============================================================
+// FUNCTION DECLARATIONS
+// ============================================================
+
+void processRadarMessage(String message);
+
+void showHumanPage();
+void showMotionPage();
+void showEnvironmentPage();
+void showSafetyPage();
+
+void readMLX90614();
+void readMQ135();
+void readMPU6050();
+
+void updateFallDetection();
+
+void sendBluetoothData();
+
+void playHumanAlert();
+void playNoHumanAlert();
+void playAirAlert();
+void playTemperatureAlert();
+void playFallAlert();
+
+float readMLXTemperature(uint8_t registerAddress);
+
+void writeMPURegister(uint8_t reg, uint8_t value);
+void readMPUData();
+
+// ============================================================
+// SETUP
+// ============================================================
+
+void setup()
+{
+  // ----------------------------------------------------------
+  // Laptop USB
+  // ----------------------------------------------------------
+
+  RADAR_SERIAL.begin(115200);
+
+  // ----------------------------------------------------------
+  // HC-05
+  // ----------------------------------------------------------
+
+  HC05_SERIAL.begin(HC05_BAUD);
+
+  // ----------------------------------------------------------
+  // DFPlayer
+  // ----------------------------------------------------------
+
+  DFPLAYER_SERIAL.begin(DFPLAYER_BAUD);
+
+  // ----------------------------------------------------------
+  // I2C
+  // ----------------------------------------------------------
+
+  Wire.begin();
+
+  // ----------------------------------------------------------
+  // OLED
+  // ----------------------------------------------------------
+
+  if (!display.begin(
+        SSD1306_SWITCHCAPVCC,
+        OLED_ADDRESS))
+  {
+    while (1)
+    {
+      // OLED initialization failed
+    }
+  }
+
+  display.clearDisplay();
+
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setTextSize(2);
+  display.setCursor(25, 5);
+  display.println("VEGA");
+
+  display.setTextSize(1);
+  display.setCursor(18, 30);
+  display.println("FIREFIGHTER");
+
+  display.setCursor(25, 43);
+  display.println("SAFETY SYSTEM");
+
+  display.display();
+
+  delay(2000);
+
+  // ----------------------------------------------------------
+  // MPU6050 initialization
+  // ----------------------------------------------------------
+
+  writeMPURegister(0x6B, 0x00);
+
+  // Accelerometer ±8g
+  writeMPURegister(0x1C, 0x10);
+
+  // Gyroscope ±500 dps
+  writeMPURegister(0x1B, 0x08);
+
+  // ----------------------------------------------------------
+  // DFPlayer initialization
+  // ----------------------------------------------------------
+
+  if (dfPlayer.begin(DFPLAYER_SERIAL))
+  {
+    dfPlayerAvailable = true;
+
+    dfPlayer.volume(25);
+
+    dfPlayer.EQ(DFPLAYER_EQ_NORMAL);
+  }
+  else
+  {
+    dfPlayerAvailable = false;
+  }
+
+  // ----------------------------------------------------------
+  // Initial OLED
+  // ----------------------------------------------------------
+
+  showHumanPage();
+
+  // ----------------------------------------------------------
+  // Startup message
+  // ----------------------------------------------------------
+
+  RADAR_SERIAL.println();
+  RADAR_SERIAL.println("=================================");
+  RADAR_SERIAL.println(" VEGA MEGA 2560 READY");
+  RADAR_SERIAL.println("=================================");
+  RADAR_SERIAL.println("USB Radar Interface : READY");
+  RADAR_SERIAL.println("OLED                 : READY");
+  RADAR_SERIAL.println("MLX90614             : READY");
+  RADAR_SERIAL.println("MQ135                : READY");
+  RADAR_SERIAL.println("MPU6050              : READY");
+
+  if (dfPlayerAvailable)
+  {
+    RADAR_SERIAL.println("DFPlayer             : READY");
+  }
+  else
+  {
+    RADAR_SERIAL.println("DFPlayer             : NOT FOUND");
+  }
+
+  RADAR_SERIAL.println("=================================");
+  RADAR_SERIAL.println("Waiting for radar data...");
+}
+
+// ============================================================
+// LOOP
+// ============================================================
+
+void loop()
+{
+  // ----------------------------------------------------------
+  // 1. RECEIVE RADAR DATA FROM LAPTOP
+  // ----------------------------------------------------------
+
+  while (RADAR_SERIAL.available() > 0)
+  {
+    char incomingChar = RADAR_SERIAL.read();
+
+    if (incomingChar == '\n')
+    {
+      processRadarMessage(radarLine);
+
+      radarLine = "";
+    }
+
+    else if (incomingChar == '\r')
+    {
+      // Ignore CR
+    }
+
+    else
+    {
+      radarLine += incomingChar;
+
+      // Safety limit
+      if (radarLine.length() > 100)
+      {
+        radarLine = "";
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 2. READ MLX90614
+  // ----------------------------------------------------------
+
+  if (millis() - lastTemperatureRead >= TEMPERATURE_INTERVAL)
+  {
+    lastTemperatureRead = millis();
+
+    readMLX90614();
+  }
+
+  // ----------------------------------------------------------
+  // 3. READ MQ135
+  // ----------------------------------------------------------
+
+  if (millis() - lastAirRead >= AIR_INTERVAL)
+  {
+    lastAirRead = millis();
+
+    readMQ135();
+  }
+
+  // ----------------------------------------------------------
+  // 4. READ MPU6050
+  // ----------------------------------------------------------
+
+  if (millis() - lastMPURead >= MPU_INTERVAL)
+  {
+    lastMPURead = millis();
+
+    readMPU6050();
+
+    updateFallDetection();
+  }
+
+  // ----------------------------------------------------------
+  // 5. OLED PAGE ROTATION
+  // ----------------------------------------------------------
+
+  if (millis() - lastDisplayChange >= DISPLAY_PAGE_INTERVAL)
+  {
+    lastDisplayChange = millis();
+
+    displayPage++;
+
+    if (displayPage > 3)
+    {
+      displayPage = 0;
+    }
+
+    if (displayPage == 0)
+    {
+      showHumanPage();
+    }
+
+    else if (displayPage == 1)
+    {
+      showMotionPage();
+    }
+
+    else if (displayPage == 2)
+    {
+      showEnvironmentPage();
+    }
+
+    else if (displayPage == 3)
+    {
+      showSafetyPage();
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 6. BLUETOOTH
+  // ----------------------------------------------------------
+
+  if (millis() - lastBluetoothSend >= BLUETOOTH_INTERVAL)
+  {
+    lastBluetoothSend = millis();
+
+    sendBluetoothData();
+  }
+}
+
+// ============================================================
+// PROCESS RADAR MESSAGE
+// ============================================================
+
+void processRadarMessage(String message)
+{
+  message.trim();
+
+  if (message.length() == 0)
+  {
+    return;
+  }
+
+  // ==========================================================
+  // HUMAN MESSAGE
+  //
+  // H,count,distance,angle,velocity
+  //
+  // Example:
+  // H,1,3.25,-10.50,0.40
+  // ==========================================================
+
+  if (message.charAt(0) == 'H')
+  {
+    int comma1 = message.indexOf(',');
+    int comma2 = message.indexOf(',', comma1 + 1);
+    int comma3 = message.indexOf(',', comma2 + 1);
+    int comma4 = message.indexOf(',', comma3 + 1);
+
+    if (comma1 == -1 ||
+        comma2 == -1 ||
+        comma3 == -1 ||
+        comma4 == -1)
+    {
+      return;
+    }
+
+    String countString =
+        message.substring(comma1 + 1, comma2);
+
+    String distanceString =
+        message.substring(comma2 + 1, comma3);
+
+    String angleString =
+        message.substring(comma3 + 1, comma4);
+
+    String velocityString =
+        message.substring(comma4 + 1);
+
+    humanCount = countString.toInt();
+
+    humanDistance =
+        distanceString.toFloat();
+
+    humanAngle =
+        angleString.toFloat();
+
+    humanVelocity =
+        velocityString.toFloat();
+
+    if (humanCount > 0)
+    {
+      humanDetected = true;
+    }
+    else
+    {
+      humanDetected = false;
+    }
+
+    // --------------------------------------------------------
+    // Debug information
+    // --------------------------------------------------------
+
+    RADAR_SERIAL.println();
+    RADAR_SERIAL.println("---------- RADAR ----------");
+
+    RADAR_SERIAL.print("Human Count : ");
+    RADAR_SERIAL.println(humanCount);
+
+    RADAR_SERIAL.print("Distance    : ");
+    RADAR_SERIAL.print(humanDistance, 2);
+    RADAR_SERIAL.println(" m");
+
+    RADAR_SERIAL.print("Angle       : ");
+    RADAR_SERIAL.print(humanAngle, 2);
+    RADAR_SERIAL.println(" deg");
+
+    RADAR_SERIAL.print("Velocity    : ");
+    RADAR_SERIAL.print(humanVelocity, 2);
+    RADAR_SERIAL.println(" m/s");
+
+    RADAR_SERIAL.println("---------------------------");
+
+    // --------------------------------------------------------
+    // Immediately update OLED
+    // --------------------------------------------------------
+
+    showHumanPage();
+
+    // --------------------------------------------------------
+    // Audio
+    // --------------------------------------------------------
+
+    if (humanDetected)
+    {
+      playHumanAlert();
+    }
+  }
+
+  // ==========================================================
+  // NO HUMAN MESSAGE
+  //
+  // N,0,0,0,0
+  // ==========================================================
+
+  else if (message.charAt(0) == 'N')
+  {
+    humanCount = 0;
+
+    humanDistance = 0;
+    humanAngle = 0;
+    humanVelocity = 0;
+
+    humanDetected = false;
+
+    RADAR_SERIAL.println("NO HUMAN DETECTED");
+
+    showHumanPage();
+
+    playNoHumanAlert();
+  }
+}
+
+// ============================================================
+// OLED HUMAN PAGE
+// ============================================================
+
+void showHumanPage()
+{
+  display.clearDisplay();
+
+  display.setTextColor(SSD1306_WHITE);
+
+  if (humanDetected)
+  {
+    display.setTextSize(2);
+
+    display.setCursor(5, 0);
+    display.println("HUMAN");
+
+    display.setCursor(5, 17);
+    display.println("DETECTED");
+
+    display.setTextSize(1);
+
+    display.setCursor(5, 38);
+    display.print("Count: ");
+    display.println(humanCount);
+
+    display.setCursor(5, 48);
+    display.print("Dist : ");
+    display.print(humanDistance, 2);
+    display.println(" m");
+
+    display.setCursor(5, 58);
+    display.print("Angle: ");
+    display.print(humanAngle, 1);
+    display.println(" deg");
+  }
+
+  else
+  {
+    display.setTextSize(2);
+
+    display.setCursor(5, 8);
+    display.println("NO HUMAN");
+
+    display.setCursor(28, 30);
+    display.println("DETECTED");
+
+    display.setTextSize(1);
+
+    display.setCursor(25, 55);
+    display.println("Radar Active");
+  }
+
+  display.display();
+}
+
+// ============================================================
+// OLED MOTION PAGE
+// ============================================================
+
+void showMotionPage()
+{
+  display.clearDisplay();
+
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setTextSize(2);
+  display.setCursor(25, 0);
+  display.println("MOTION");
+
+  display.setTextSize(1);
+
+  display.setCursor(5, 23);
+  display.print("Velocity : ");
+  display.print(humanVelocity, 2);
+  display.println(" m/s");
+
+  display.setCursor(5, 34);
+  display.print("Angle    : ");
+  display.print(humanAngle, 1);
+  display.println(" deg");
+
+  display.setCursor(5, 45);
+  display.print("Accel    : ");
+  display.print(totalAcceleration, 2);
+  display.println(" g");
+
+  display.setCursor(5, 56);
+  display.print("Tilt     : ");
+  display.print(tiltAngle, 1);
+  display.println(" deg");
+
+  display.display();
+}
+
+// ============================================================
+// OLED ENVIRONMENT PAGE
+// ============================================================
+
+void showEnvironmentPage()
+{
+  display.clearDisplay();
+
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setTextSize(2);
+  display.setCursor(12, 0);
+  display.println("ENVIRON");
+
+  display.setTextSize(1);
+
+  display.setCursor(5, 23);
+  display.print("Object Temp: ");
+  display.print(objectTemperature, 1);
+  display.println(" C");
+
+  display.setCursor(5, 35);
+  display.print("Ambient    : ");
+  display.print(ambientTemperature, 1);
+  display.println(" C");
+
+  display.setCursor(5, 47);
+  display.print("Air        : ");
+  display.print(airPPM, 0);
+  display.println(" ppm");
+
+  if (airPPM >= AIR_WARNING_THRESHOLD)
+  {
+    display.setCursor(5, 58);
+    display.println("AIR: WARNING");
+  }
+  else
+  {
+    display.setCursor(5, 58);
+    display.println("AIR: NORMAL");
+  }
+
+  display.display();
+}
+
+// ============================================================
+// OLED SAFETY PAGE
+// ============================================================
+
+void showSafetyPage()
+{
+  display.clearDisplay();
+
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setTextSize(2);
+
+  display.setCursor(25, 0);
+  display.println("SAFETY");
+
+  display.setTextSize(1);
+
+  display.setCursor(5, 23);
+
+  if (fallAlert)
+  {
+    display.println("FALL: DETECTED");
+  }
+  else
+  {
+    display.println("FALL: NORMAL");
+  }
+
+  display.setCursor(5, 36);
+
+  if (objectTemperature >= 38.0)
+  {
+    display.println("TEMP: HIGH");
+  }
+  else
+  {
+    display.println("TEMP: NORMAL");
+  }
+
+  display.setCursor(5, 49);
+
+  if (airPPM >= AIR_WARNING_THRESHOLD)
+  {
+    display.println("AIR: POOR");
+  }
+  else
+  {
+    display.println("AIR: NORMAL");
+  }
+
+  display.display();
+}
+
+// ============================================================
+// MLX90614 READ
+// ============================================================
+
+float readMLXTemperature(uint8_t registerAddress)
+{
+  Wire.beginTransmission(MLX90614_ADDRESS);
+
+  Wire.write(registerAddress);
+
+  if (Wire.endTransmission(false) != 0)
+  {
+    return NAN;
+  }
+
+  Wire.requestFrom(
+      MLX90614_ADDRESS,
+      (uint8_t)3);
+
+  if (Wire.available() < 3)
+  {
+    return NAN;
+  }
+
+  uint8_t lowByte = Wire.read();
+  uint8_t highByte = Wire.read();
+  uint8_t pec = Wire.read();
+
+  uint16_t rawValue =
+      ((uint16_t)highByte << 8) |
+      lowByte;
+
+  float temperature =
+      (rawValue * 0.02) - 273.15;
+
+  return temperature;
+}
+
+// ============================================================
+// READ MLX90614
+// ============================================================
+
+void readMLX90614()
+{
+  float ambient =
+      readMLXTemperature(0x06);
+
+  float object =
+      readMLXTemperature(0x07);
+
+  if (!isnan(ambient))
+  {
+    ambientTemperature = ambient;
+  }
+
+  if (!isnan(object))
+  {
+    objectTemperature = object;
+  }
+}
+
+// ============================================================
+// READ MQ135
+// ============================================================
+
+void readMQ135()
+{
+  int adcValue = analogRead(MQ135_PIN);
+
+  // Simple approximate conversion.
+  // This is NOT laboratory-calibrated ppm.
+
+  if (adcValue <= 0)
+  {
+    airPPM = 0;
+    return;
+  }
+
+  float voltage =
+      adcValue * (5.0 / 1023.0);
+
+  float sensorResistance =
+      ((5.0 - voltage) / voltage) * 10.0;
+
+  if (sensorResistance <= 0)
+  {
+    airPPM = 0;
+    return;
+  }
+
+  // Approximate model
+  airPPM =
+      1000.0 *
+      (10.0 / sensorResistance);
+}
+
+// ============================================================
+// MPU6050 WRITE
+// ============================================================
+
+void writeMPURegister(uint8_t reg, uint8_t value)
+{
+  Wire.beginTransmission(MPU6050_ADDRESS);
+
+  Wire.write(reg);
+  Wire.write(value);
+
+  Wire.endTransmission();
+}
+
+// ============================================================
+// READ MPU6050 RAW DATA
+// ============================================================
+
+void readMPUData()
+{
+  Wire.beginTransmission(MPU6050_ADDRESS);
+
+  Wire.write(0x3B);
+
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(
+      MPU6050_ADDRESS,
+      (uint8_t)14);
+
+  if (Wire.available() < 14)
+  {
+    return;
+  }
+
+  accelX =
+      ((int16_t)Wire.read() << 8) |
+      Wire.read();
+
+  accelY =
+      ((int16_t)Wire.read() << 8) |
+      Wire.read();
+
+  accelZ =
+      ((int16_t)Wire.read() << 8) |
+      Wire.read();
+
+  Wire.read();
+  Wire.read();
+
+  gyroX =
+      ((int16_t)Wire.read() << 8) |
+      Wire.read();
+
+  gyroY =
+      ((int16_t)Wire.read() << 8) |
+      Wire.read();
+
+  gyroZ =
+      ((int16_t)Wire.read() << 8) |
+      Wire.read();
+}
+
+// ============================================================
+// READ MPU6050
+// ============================================================
+
+void readMPU6050()
+{
+  readMPUData();
+
+  // ±8g -> 4096 LSB/g
+
+  ax_g = accelX / 4096.0;
+  ay_g = accelY / 4096.0;
+  az_g = accelZ / 4096.0;
+
+  // ±500 dps -> 65.5 LSB/(deg/s)
+
+  gx_dps = gyroX / 65.5;
+  gy_dps = gyroY / 65.5;
+  gz_dps = gyroZ / 65.5;
+
+  totalAcceleration =
+      sqrt(
+          ax_g * ax_g +
+          ay_g * ay_g +
+          az_g * az_g);
+
+  // Tilt from Z axis
+
+  tiltAngle =
+      acos(
+          constrain(
+              az_g / max(totalAcceleration, 0.001),
+              -1.0,
+              1.0))
+      * 180.0 / PI;
+}
+
+// ============================================================
+// FALL DETECTION
+// ============================================================
+
+void updateFallDetection()
+{
+  unsigned long now = millis();
+
+  // ==========================================================
+  // Already detected
+  // ==========================================================
+
+  if (fallState == FALL_DETECTED)
+  {
+    fallAlert = true;
+
+    // Check recovery
+
+    if (tiltAngle < RECOVERY_TILT)
+    {
+      if (recoveryStart == 0)
+      {
+        recoveryStart = now;
+      }
+
+      if (now - recoveryStart >= RECOVERY_TIME)
+      {
+        fallState = FALL_NORMAL;
+
+        fallAlert = false;
+
+        recoveryStart = 0;
+      }
+    }
+    else
+    {
+      recoveryStart = 0;
+    }
+
+    return;
+  }
+
+  // ==========================================================
+  // FREE FALL
+  // ==========================================================
+
+  if (totalAcceleration < FREE_FALL_THRESHOLD)
+  {
+    if (freeFallStart == 0)
+    {
+      freeFallStart = now;
+    }
+
+    fallState = FALL_FREE_FALL;
+  }
+
+  // ==========================================================
+  // IMPACT
+  // ==========================================================
+
+  else if (fallState == FALL_FREE_FALL)
+  {
+    if (totalAcceleration >= IMPACT_THRESHOLD)
+    {
+      impactStart = now;
+
+      fallState = FALL_IMPACT;
+    }
+    else if (now - freeFallStart > 1500)
+    {
+      fallState = FALL_NORMAL;
+
+      freeFallStart = 0;
+    }
+  }
+
+  // ==========================================================
+  // AFTER IMPACT CHECK TILT
+  // ==========================================================
+
+  else if (fallState == FALL_IMPACT)
+  {
+    if (tiltAngle >= TILT_THRESHOLD)
+    {
+      if (abnormalTiltStart == 0)
+      {
+        abnormalTiltStart = now;
+      }
+
+      fallState = FALL_TILT;
+
+      if (now - abnormalTiltStart >= TILT_CONFIRM_TIME)
+      {
+        fallState = FALL_DETECTED;
+
+        fallAlert = true;
+
+        playFallAlert();
+      }
+    }
+    else
+    {
+      fallState = FALL_NORMAL;
+
+      freeFallStart = 0;
+      abnormalTiltStart = 0;
+    }
+  }
+
+  // ==========================================================
+  // ABNORMAL TILT
+  // ==========================================================
+
+  else if (fallState == FALL_TILT)
+  {
+    if (tiltAngle >= TILT_THRESHOLD)
+    {
+      if (now - abnormalTiltStart >= TILT_CONFIRM_TIME)
+      {
+        fallState = FALL_DETECTED;
+
+        fallAlert = true;
+
+        playFallAlert();
+      }
+    }
+    else
+    {
+      fallState = FALL_NORMAL;
+
+      abnormalTiltStart = 0;
+    }
+  }
+
+  // ==========================================================
+  // NORMAL
+  // ==========================================================
+
+  else
+  {
+    if (tiltAngle < TILT_THRESHOLD)
+    {
+      fallState = FALL_NORMAL;
+
+      fallAlert = false;
+
+      freeFallStart = 0;
+      abnormalTiltStart = 0;
+    }
+  }
+}
+
+// ============================================================
+// BLUETOOTH DATA
+// ============================================================
+
+void sendBluetoothData()
+{
+  HC05_SERIAL.print("HUMAN=");
+  HC05_SERIAL.print(humanCount);
+
+  HC05_SERIAL.print(",DIST=");
+  HC05_SERIAL.print(humanDistance, 2);
+
+  HC05_SERIAL.print(",ANGLE=");
+  HC05_SERIAL.print(humanAngle, 1);
+
+  HC05_SERIAL.print(",VEL=");
+  HC05_SERIAL.print(humanVelocity, 2);
+
+  HC05_SERIAL.print(",TEMP=");
+  HC05_SERIAL.print(objectTemperature, 1);
+
+  HC05_SERIAL.print(",AIR=");
+  HC05_SERIAL.print(airPPM, 0);
+
+  HC05_SERIAL.print(",FALL=");
+
+  if (fallAlert)
+  {
+    HC05_SERIAL.println("DETECTED");
+  }
+  else
+  {
+    HC05_SERIAL.println("NORMAL");
+  }
+}
+
+// ============================================================
+// DFPLAYER - HUMAN
+// ============================================================
+
+void playHumanAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(1);
+}
+
+// ============================================================
+// DFPLAYER - NO HUMAN
+// ============================================================
+
+void playNoHumanAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(2);
+}
+
+// ============================================================
+// DFPLAYER - AIR
+// ============================================================
+
+void playAirAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(3);
+}
+
+// ============================================================
+// DFPLAYER - TEMPERATURE
+// ============================================================
+
+void playTemperatureAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(4);
+}
+
+// ============================================================
+// DFPLAYER - FALL
+// ============================================================
+
+void playFallAlert()
+{
+  if (!dfPlayerAvailable)
+  {
+    return;
+  }
+
+  dfPlayer.play(4);
+}
